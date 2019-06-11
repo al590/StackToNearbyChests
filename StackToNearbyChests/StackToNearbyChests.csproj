@@ -65,6 +65,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ButtonHolder.cs" />
+    <Compile Include="ChestSearchMode.cs" />
     <Compile Include="InventoryPage_Patcher.cs" />
     <Compile Include="ModConfig.cs" />
     <Compile Include="ModEntry.cs" />

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Buildings;
@@ -14,8 +15,11 @@ namespace StackToNearbyChests
 		{
 
 			StardewValley.Farmer farmer = Game1.player;
+			IEnumerable<Chest> chests = ModEntry.Config.SearchMode == ChestSearchMode.CURRENT_AREA
+				? GetChestsAroundFarmer(farmer, radius) 
+				: GetAllChests();
 
-			foreach (Chest chest in GetChestsAroundFarmer(farmer, radius))
+			foreach (Chest chest in chests)
 			{
 				List<Item> itemsToRemoveFromPlayer = new List<Item>();
 				bool movedAtLeastOne = false;
@@ -77,9 +81,8 @@ namespace StackToNearbyChests
 				{
 					Vector2 checkLocation = Game1.tileSize * (farmerLocation + new Vector2(dx, dy));
 					StardewValley.Object blockObject = farmer.currentLocation.getObjectAt((int)checkLocation.X, (int)checkLocation.Y);
-					if (blockObject is Chest)
+					if (blockObject is Chest chest && IsStackingAllowed(chest))
 					{
-						Chest chest = blockObject as Chest;
 						yield return chest;
 					}
 				}
@@ -94,7 +97,10 @@ namespace StackToNearbyChests
 				if (Math.Abs(farmerLocation.X - fridgeLocation.X) <= radius && Math.Abs(farmerLocation.Y - fridgeLocation.Y) <= radius)
 				{
 					if (farmHouse.fridge.Value != null)
-						yield return farmHouse.fridge.Value;
+					{
+						if (IsStackingAllowed(farmHouse.fridge.Value))
+							yield return farmHouse.fridge.Value;
+					}
 					else
 						Console.WriteLine("StackToNearbyChests: could not find fridge!");
 				}
@@ -107,13 +113,71 @@ namespace StackToNearbyChests
 				{
 					if (Math.Abs(building.tileX.Value - farmerLocation.X) <= radius && Math.Abs(building.tileY.Value - farmerLocation.Y) <= radius)
 					{
-						if (building is JunimoHut junimoHut)
+						if (building is JunimoHut junimoHut && IsStackingAllowed(junimoHut.output.Value))
 							yield return junimoHut.output.Value;
-						if (building is Mill mill)
+
+						if (building is Mill mill && IsStackingAllowed(mill.output.Value))
 							yield return mill.output.Value;
 					}
 				}
 			}
+		}
+
+		public static IEnumerable<Chest> GetAllChests()
+		{
+			foreach (var location in ModEntry.Helper.Multiplayer.GetActiveLocations())
+			{
+				var mapWidth = location.Map.DisplayWidth / 64;
+				var mapHeight = location.Map.DisplayHeight / 64;
+
+				for (var x = 0; x < mapWidth; x++)
+					for (var y = 0; y < mapHeight; y++)
+						if (location.getObjectAtTile(x, y) is Chest chest && IsStackingAllowed(chest))
+							yield return chest;
+
+				if (location is FarmHouse farmHouse && farmHouse.upgradeLevel >= 1)
+				{
+					var fridgeLocation = farmHouse.getKitchenStandingSpot();
+					fridgeLocation.X += 2; 
+					fridgeLocation.Y += -1;
+
+					if (farmHouse.fridge.Value != null) 
+					{
+						if (IsStackingAllowed(farmHouse.fridge.Value))
+							yield return farmHouse.fridge.Value;
+					}
+					else
+						Console.WriteLine("StackToNearbyChests (global): could not find fridge!");
+				}
+
+				if (location is BuildableGameLocation buildableGameLocation)
+				{
+					foreach (var building in buildableGameLocation.buildings)
+					{
+						if (building is JunimoHut junimoHut && IsStackingAllowed(junimoHut.output.Value))
+							yield return junimoHut.output.Value;
+
+						if (building is Mill mill && IsStackingAllowed(mill.output.Value))
+							yield return mill.output.Value;
+					}
+				}
+			}
+		}
+
+		private static bool IsStackingAllowed(Chest chest)
+		{
+			// If we lack any filters then any chest is suitable
+			if (ModEntry.Config.AllowedCategories.Count == 0)
+				return true;
+
+			var category = GetChestCategory(chest);
+			return !string.IsNullOrEmpty(category) && ModEntry.Config.AllowedCategories.Contains(category);
+		}
+
+		private static string GetChestCategory(Chest chest)
+		{
+			var match = Regex.Match(chest.Name, @"\|cat\:(.*?)\|");
+			return match.Success ? match.Groups[1].Value.ToLower() : null;
 		}
 	}
 }
